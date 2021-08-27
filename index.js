@@ -1,11 +1,18 @@
 const {Client} = require('whatsapp-web.js');
 const client = new Client();
-const {Grammarly} = require('@stewartmcgown/grammarly-api')
+const {correct, Grammarly} = require('@stewartmcgown/grammarly-api')
 const pdf = require('pdf-parse')
 const qrcode = require('qrcode-terminal');
 const fs = require('fs')
 const fetch = require("node-fetch");
+const mysql = require('mysql');
 
+const conn = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'logsbot'
+  });
 
 
 client.on('qr', (qr) => {
@@ -47,6 +54,26 @@ client.on('message', async msg => {
             const results = free.analyse(slicetextdoublespace);
             //kirim hasil deteksi grammar
             results.then((gmres) => {
+                client.sendMessage(msg.from, `*Teks sebelum dikoreksi* :
+                                ${slicetextdoublespace}`);
+                if(gmres.alerts.length == 0){
+                    client.sendMessage(msg.from,'Grammar anda sudah benar!')
+                }
+                else{
+                    const corrected = new Grammarly().analyse(slicetextdoublespace).then(correct);
+                    corrected.then((text)=>{
+                        client.sendMessage(msg.from, `*Teks yang sudah dikoreksi* :
+                                ${text.corrected    }`);
+                        console.log("koreksi :"+text.corrected)
+                        
+                        let data = {created_at: Date.now(),request_number: msg.from, text_before: slicetextdoublespace, text_after: text.corrected};
+                        let sql = "INSERT INTO logs SET ?";
+                        let query = conn.query(sql, data,(err, results) => {
+                            if(err) console.log(err);
+                        });
+                    })
+                    
+                }                
                 gmres.alerts.forEach((item, index) => {
                         client.sendMessage(msg.from, `*Correction* :
                         ${item.title}
@@ -57,16 +84,19 @@ client.on('message', async msg => {
                         ${item.explanation}
                         ${item.cardLayout.groupDescription}
                         `);
+                        let data = {title: item.title, group: item.group, text: item.text, detail: item.details, explanation: item.explanation, groupdescription: item.cardLayout.groupDescription, request_number: msg.from};
+                        let sql = "INSERT INTO corrections SET ?";
+                        let query = conn.query(sql, data,(err, results) => {
+                            if(err) console.log(err);
+                        });
                 })
-                if(gmres.alerts.length == 0){
-                    client.sendMessage(msg.from,'Grammar anda sudah benar!')
-                }
             })
         })
         .catch((reason)=>{
             console.log(reason)
         })
         
+
         // console.log(media);
     }
     switch (msg.body) {
@@ -90,6 +120,22 @@ client.on('message', async msg => {
         const results = free.analyse(text);
         console.log('Grammar check : '+text)
         results.then((gmres) => {
+            if(gmres.alerts.length == 0){
+                client.sendMessage(msg.from,'Grammar anda sudah benar!')
+            }
+            else{
+                const corrected = new Grammarly().analyse(text).then(correct);
+                corrected.then((text)=>{
+                    client.sendMessage(msg.from, `*Teks yang sudah dikoreksi* :
+                            ${text.corrected    }`);
+                    console.log("koreksi :"+text.corrected) 
+                    let data = {created_at: Date.now(), request_number: msg.from, text_before: slicetextdoublespace, text_after: text.corrected};
+                        let sql = "INSERT INTO logs SET ?";
+                        let query = conn.query(sql, data,(err, results) => {
+                            if(err) console.log(err);
+                        });       
+                })
+            }
             gmres.alerts.forEach((item, index) => {
                     client.sendMessage(msg.from, `*Correction* :
                     ${item.title}
@@ -100,10 +146,12 @@ client.on('message', async msg => {
                     ${item.explanation}
                     ${item.cardLayout.groupDescription}
                     `);
+                    let data = {title: item.title, group: item.group, text: item.text, detail: item.details, explanation: item.explanation, groupdescription: item.cardLayout.groupDescription, request_number: msg.from};
+                        let sql = "INSERT INTO corrections SET ?";
+                        let query = conn.query(sql, data,(err, results) => {
+                            if(err) console.log(err);
+                        });
             })
-            if(gmres.alerts.length == 0){
-                client.sendMessage(msg.from,'Grammar anda sudah benar!')
-            }
         })
     }
 });
